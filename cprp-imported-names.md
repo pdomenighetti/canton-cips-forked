@@ -1,257 +1,174 @@
 Number: CIP-ZZZZ
 
-Title: Canton Imported Names — DNS, LEI/vLEI, ENS, and Cross-Chain Identity Sources
+Title: Canton Imported Names — Decentralized DNS Name Importer and Blueprint for External Name Systems
 
 Status: Draft
 
 Author: Paolo Domenighetti (Freename), [Co-authors TBD]
 
-Created: 2026-05-28
+Created: 2026-08-23
 
 ## Abstract
 
-This CIP defines how names from external naming systems — the Domain Name System (DNS), the Legal Entity Identifier registry (LEI/vLEI), the Ethereum Name Service (ENS), and other public identity sources — are imported into the Canton Network as verifiable credentials with declared trust tiers. It specifies, per import method, the verification procedure, the credential encoding, the trust tier produced under the framework defined in CIP-YYYY (Party Identity Verification), and the re-verification cadence.
+This CIP defines how names from external naming systems are imported into the Canton Network as on-ledger credentials that Daml code can reference. It specifies the DNS-verified name importer in full — covering the verification procedure, the on-ledger credential encoding, and the re-verification cadence — and establishes this pattern as the blueprint for future importers targeting LEI/vLEI, ENS, email, and other external systems.
 
-This CIP does not define Canton-native naming (the `.canton` namespace and its registrars are specified in the `.canton` CIP, PR #209 from Axymos) and does not define the resolution interface or composition engine (specified in CIP-XXXX, Party Name Resolution). It defines only how external identity is brought into Canton with a verifiable trust signal.
+This CIP aligns with the Canton Party Name Resolution Standard (companion CIP) for the FQPN format, the resolver interface, and the display conventions. It aligns with the CNS 2.0 CIP (Digital Asset) for the on-ledger registry infrastructure and DSO governance. It follows the direction confirmed by Simon Meier at the WG meeting of July 9, 2026: the import model (materializing external names as on-ledger credentials) is the required approach when the imported names must be referenced by Daml code.
+
+Advanced verification semantics (a formal T1–T4 trust framework, application-configurable verification policies) are deferred to future work.
 
 ## Motivation
 
-Canton's institutional participants operate across jurisdictions with multiple, parallel identity regimes. A counterparty may be identified by its DNS-registered domain (`blackrock.com`), by its legal entity identifier (`549300HMQBIKME8LIL78`), by a verifiable LEI credential issued under the GLEIF infrastructure (a vLEI), by an Ethereum address or `.eth` name, or by a national or sectoral identifier. No single source is sufficient; no single source can be ignored.
+Canton's institutional participants operate across jurisdictions with multiple parallel identity regimes: domain names registered through DNS, legal entities identified by GLEIF LEIs, cryptographic identities via Ethereum and ENS, financial-messaging identifiers via SWIFT. A Canton counterparty typically has one or more of these external identities, and applications benefit from resolving them to Canton Party IDs with verifiable evidence of the binding.
 
-The Identity and Metadata Working Group has agreed (April 9, 2026) to split this layer out as a dedicated CIP. The goals are to:
+The Working Group has agreed (April 9, 2026) to a dedicated CIP for external-name imports, separate from the general resolution mechanics and separate from the Canton-native `.canton` allocation (Axymos's CIP). The goals of this CIP:
 
-- Define a small, stable common pattern for importing external names so that adding a new source (e.g. national KYC registries) follows a predictable shape.
-- Make the trust each import method produces explicit and uniform — every imported credential declares which tier of CIP-YYYY's framework it falls under.
-- Ensure that imported names compose cleanly through CIP-XXXX with Canton-native names (e.g. `.canton`) without contention or duplicate machinery.
+- Specify DNS import fully — verification, credentialing, cadence — as the reference implementation.
+- Establish the shared structure so that additional importers (LEI/vLEI, ENS, email, SWIFT, further chains) can be specified in follow-up CIPs without reinventing the pattern.
+- Anchor the import model on Canton as the source of truth for imported names, so that Daml code and on-ledger workflows can reference them.
 
-Without this CIP, every resolver would invent its own verification procedure and trust framing, and applications would have no consistent basis to compare credentials issued by different operators against different external sources.
+This CIP does not define the FQPN format, the resolver interface, or the display conventions (specified in the Canton Party Name Resolution Standard). It does not define the CN Credentials Registry (specified in the CN Credentials Standard CIP). It does not define `.canton` allocation (specified in the `.canton` CIP led by Axymos).
 
 ## Specification
 
 ### 1. Scope
 
-This CIP specifies the import of names from the following external sources:
+This CIP specifies the DNS-verified name importer as a fully-detailed reference implementation, and provides guidelines for additional importers to follow the same pattern. The importers in scope for future companion CIPs, following this blueprint:
 
-- DNS — domain names registered through the Internet's public DNS system, with DNSSEC validation.
-- LEI/vLEI — Legal Entity Identifiers, in both their unverified registry form (LEI) and their cryptographically verifiable form (vLEI), issued under GLEIF infrastructure.
-- ENS — Ethereum Name Service names, particularly under the `.eth` top-level name.
-- Cross-Chain Identity — Ethereum addresses and signatures, ENS-anchored claims, SWIFT BIC self-attestations, and extension points for other chains and registries.
+- LEI / vLEI (GLEIF-verified legal entity identifiers)
+- ENS (Ethereum Name Service names, particularly under `.eth`)
+- Email / DKIM
+- SWIFT BIC codes
+- Additional chain-native naming systems
 
-This CIP does not specify the format of the Fully Qualified Party Name (FQPN), the resolver interface, the composition engine, or the on-ledger registration template; those are defined in CIP-XXXX. It does not specify the trust tier framework itself (T1–T4); that is defined in CIP-YYYY. It does not specify Canton-native naming or the `.canton` namespace; that is defined in the `.canton` CIP led by Axymos.
+Each future importer is a separate CIP that inherits the structure defined here and specifies its own verification procedure.
 
 ### 2. Common Import Pattern
 
-Every import method specified in this CIP follows the same structural pattern:
+Every importer specified as a companion CIP under this blueprint follows the same structure:
 
-1. Verification procedure — a deterministic, reproducible sequence of steps that establishes a binding between an external identity (e.g. a domain) and a Canton Party ID. The procedure MUST produce evidence sufficient for independent re-execution.
-2. Credential encoding — a CN Credential where the publisher is the verifying resolver, the subject is the verified Canton party, and the holder is the verified Canton party. Claim keys follow the `cprp/*` namespace (see Section 7).
-3. Declared trust tier — every imported credential carries a `cprp/trust-anchor` claim whose value (T1, T2, T3, or T4) is determined by the import method per this CIP, in conformance with the framework defined in CIP-YYYY.
-4. Re-verification cadence — every import method declares a maximum age beyond which the credential MUST be re-verified and re-published.
+1. Verification procedure. A deterministic, reproducible sequence of steps that establishes a binding between an external identity and a Canton Party ID.
+2. Credential encoding. A standard CN Credential (publisher = the importer registrar, subject = the verified Canton party, holder = the verified Canton party). Import-specific claim keys are namespaced under `cprp/`.
+3. Import model. External names are materialized as on-ledger credentials so that Daml code can reference them (per the July 9, 2026 WG direction). Bridge / reference patterns without on-ledger materialization are permissible only for read-only or private cases where no Daml logic touches the name.
+4. Re-verification cadence. Every importer declares a maximum age beyond which a credential MUST be re-verified. Cadence reflects the volatility of the external source.
+5. Registrar operation. The importer is operated by one or more registrars approved through the DSO governance defined by the CNS 2.0 CIP. A single external system may have multiple approved registrars (for scale, redundancy, or geographic distribution); the DSO may designate a Decentralized Registry Operator (DRO) for shared external-system imports where uniqueness across registrars is required.
 
-Applications consuming imported credentials MUST treat the `cprp/trust-anchor` claim as authoritative for the credential's tier; they MUST NOT independently re-tier an imported credential.
+### 3. DNS-Verified Name Importer
 
-### 3. DNS Verification
+#### 3.1 Purpose
 
-#### 3.1 Verified Binding
+Establish that the holder of a specific Canton Party ID controls a specific DNS-registered domain, and publish the binding as an on-ledger credential resolvable via the `dns` resolver.
 
-A Canton party with control over a DNS-registered domain MAY have that control attested to as a Canton credential. The verification establishes that the holder of a specific Canton Party ID also controls the named domain.
+#### 3.2 Verification Procedure
 
-Procedure:
+1. Precondition: DNSSEC is enabled for the domain. Chains that cannot be validated to the DNS root under DNSSEC fail this step.
+2. The party publishes a TXT record at `_canton.<domain>` with value `party=<party-id>`. Additional attributes MAY be included as `key=value` pairs separated by whitespace; only the `party=` attribute is normative.
+3. One or more importer registrars fetch the TXT record through DNSSEC-validated resolution, confirm the `party=` value matches the claimed Canton Party ID, and publish the credential on-ledger.
 
-1. The party enables DNSSEC for the domain (validation of the DNSSEC chain from the root zone to the domain is a precondition to verification; non-DNSSEC chains fail).
-2. The party publishes a TXT record at `_canton.<domain>` with the value `party=<party-id>` (where `<party-id>` is the full Canton Party ID, including its `::`-separated components, which are unambiguous in this context because the record value is a single string).
-3. The verifying resolver fetches the TXT record through DNSSEC-validated resolution, confirms the `party=` value matches the claimed Party ID, and publishes the credential.
+For DNS specifically, the Working Group has discussed operating the importer as a shared Decentralized Registry Operator built on the SV attestor infrastructure (referenced by Simon Meier as "BitSafe's decentralization manager" in the CNS 2.0 next-steps presentation). Multiple attestors independently execute the verification procedure and jointly publish the credential, providing decentralization for the DNS TLD imports where a single trusted operator would be inappropriate.
 
-The TXT record MAY carry additional `;`-separated key-value attributes (e.g. `verified-by=<resolver-name>;valid-until=<timestamp>`); only the `party=` attribute is normative.
-
-#### 3.2 Phase 1: Featured-Resolver Quorum (T3)
-
-Initial deployment defines DNS verification as a quorum operation executed by featured resolvers (resolvers granted T3 issuer status under the registry specified in CIP-YYYY). Each featured resolver independently performs the verification procedure of Section 3.1 and publishes its own credential. The composition engine of CIP-XXXX combines these into a single result; an application's verification policy MAY require a minimum count of agreeing featured-resolver credentials to accept the DNS binding.
-
-This phase does not require any change to the Splice software stack or to the Super Validator (SV) node software. It ships with the existing featured-resolver mechanism.
-
-#### 3.3 Phase 2: SV Consensus (T1) — deferred
-
-A future enhancement, deferred from this CIP, would extend the SV node software to perform DNS verification directly, with the DSO publishing a single T1 `CnsDnsClaim` credential reflecting SV consensus. That enhancement requires Splice changes and is out of scope for this version.
-
-#### 3.4 Credential Encoding
+#### 3.3 Credential Encoding
 
 ```
-publisher : <verifying-resolver-party>
+publisher : <importer-registrar-party>
 subject   : <verified-canton-party>
 holder    : <verified-canton-party>
 claims    : {
-  "cprp/trust-anchor"       : "T3",
+  "cprp/fqpn"               : "<network>:dns:<domain>",
+  "cprp/network"            : "<network>",
   "cprp/source"             : "dns",
-  "cprp/registrar"          : "<domain>",
   "cprp/verification-method": "dnssec-txt",
   "cprp/verified-at"        : "<ISO-8601-timestamp>",
   "cprp/valid-until"        : "<ISO-8601-timestamp>"
 }
 ```
 
-#### 3.5 Re-Verification
+The `<domain>` in the FQPN is the DNS-registered domain — either the apex (`blackrock.com`) or a subdomain (`tmmf.lloyds.com`). The credential's `cprp/fqpn` claim carries the full FQPN including network.
 
-A DNS credential MUST be re-verified at most every 7 days. The verifying resolver SHOULD subscribe to the domain's DNSSEC notifications where available and re-verify on change. A credential past its `cprp/valid-until` MUST be treated as expired by composition (CIP-XXXX) and trust evaluation (CIP-YYYY).
+#### 3.4 Re-Verification Cadence
 
-### 4. LEI / vLEI Verification
+DNS credentials MUST be re-verified at least every 7 days. Registrars SHOULD subscribe to DNSSEC-based notification mechanisms where available and re-verify on demand when the underlying DNS record changes. A credential past its `cprp/valid-until` MUST be treated as expired.
 
-#### 4.1 LEI (Unverified Registry Lookup, T4)
+#### 3.5 Trust and Governance
 
-A self-attested claim that a Canton party is associated with a given LEI MAY be published with no verification, as a T4 credential. This is informational only; consumers SHOULD NOT treat an unverified LEI claim as authoritative.
+DNS-verified credentials carry the trust conferred by the importer's registrar status under the CNS 2.0 governance defined by the DSO. This CIP does not define a formal trust tier for DNS credentials; that would fall under the advanced verification framework retained as future work.
 
-#### 4.2 vLEI (Verifiable LEI, T2)
+### 4. Future Importers (Blueprint)
 
-A vLEI is a cryptographically verifiable credential issued under the GLEIF infrastructure by a Qualified vLEI Issuer (QVI). vLEI verification establishes that the holder of a specific Canton Party ID is the same legal entity identified by a given LEI, with the legal name attested by a QVI.
+Each future importer is a separate CIP under this blueprint. Sketches:
 
-Procedure:
+#### 4.1 LEI (GLEIF), including vLEI verification
 
-1. The party presents a vLEI credential (Legal Entity vLEI or Official Organizational Role vLEI) to the verifying resolver, cryptographically bound to its Canton Party ID.
-2. The verifying resolver queries the GLEIF API at `api.gleif.org` (or its successor) to confirm: (a) the LEI is in `ACTIVE` status; (b) the legal name in the vLEI matches the GLEIF record; (c) the issuing QVI is on the GLEIF list of trusted vLEI issuers.
-3. The verifying resolver publishes the credential at T2.
+Verification: query GLEIF's API (`api.gleif.org`) to confirm the LEI is `ACTIVE`, the legal name matches, and (for vLEI) the issuing Qualified vLEI Issuer is on the GLEIF trusted list. Re-verification cadence: 30 days, or immediately on GLEIF status change. Credential encoding follows Section 3.3 with `cprp/source: vlei` and additional claims for legal name, QVI, and vLEI type.
 
-The publishing resolver itself MUST hold T3 status to issue T2 vLEI credentials, per CIP-YYYY. The T2 tier reflects the trust authority of GLEIF and the QVI, not of the intermediary resolver — the intermediary's role is to conduct a faithful verification and bind it to a Canton Party ID.
+#### 4.2 ENS
 
-#### 4.3 Credential Encoding
+Verification: fetch a TXT record on the ENS name (typically under `.eth`) with the Canton Party ID, resolved through the ENS Public Resolver. Re-verification cadence: 14 days. Credential encoding follows Section 3.3 with `cprp/source: ens`.
 
-```
-publisher : <verifying-resolver-party>
-subject   : <verified-canton-party>
-holder    : <verified-canton-party>
-claims    : {
-  "cprp/trust-anchor"       : "T2",
-  "cprp/source"             : "vlei",
-  "cprp/registrar"          : "<LEI>",
-  "cprp/lei-status"         : "ACTIVE",
-  "cprp/legal-name"         : "<legal-entity-name>",
-  "cprp/qvi"                : "<QVI-identifier>",
-  "cprp/verification-method": "gleif-api",
-  "cprp/verified-at"        : "<ISO-8601-timestamp>",
-  "cprp/valid-until"        : "<ISO-8601-timestamp>"
-}
-```
+#### 4.3 Cross-Chain Identity (Ethereum Address, SWIFT BIC)
 
-#### 4.4 Re-Verification
+Verification for Ethereum addresses: the party signs a canonical message binding its Canton Party ID with the Ethereum private key; the importer recovers the address and confirms match. Verification for SWIFT BIC: currently self-attested only, pending an appropriate verifying infrastructure. Credential encoding follows Section 3.3 with `cprp/source: eth` or `cprp/source: swift` and appropriate additional claims.
 
-A vLEI credential MUST be re-verified at most every 30 days. If GLEIF reports a status change (LEI lapsed, retired, or revoked), the verifying resolver MUST archive the credential within 24 hours of detecting the change.
+#### 4.4 Email / DKIM
 
-### 5. ENS Verification
+Verification: an email challenge protocol backed by DKIM authentication. Credential encoding follows Section 3.3 with `cprp/source: email`.
 
-#### 5.1 Verified Binding
+Each of these importers is expected to be specified in its own CIP, following the pattern of Section 3 above, and to be pursued as separate DevFund proposals where operational funding is required.
 
-An ENS name (typically under `.eth`) is bound to a Canton Party ID by an ENS TXT record. Procedure:
-
-1. The party sets a TXT record on its ENS name with key `canton-party` and value `<party-id>`.
-2. The verifying resolver reads the record through the ENS Public Resolver (or successor), verifies the signature trail from the `.eth` registry to the record, and publishes the credential.
-
-ENS verification produces a T3 credential when issued by a featured resolver.
-
-#### 5.2 Credential Encoding
-
-```
-publisher : <verifying-resolver-party>
-subject   : <verified-canton-party>
-holder    : <verified-canton-party>
-claims    : {
-  "cprp/trust-anchor"       : "T3",
-  "cprp/source"             : "ens",
-  "cprp/registrar"          : "<ens-name>",
-  "cprp/verification-method": "ens-txt",
-  "cprp/verified-at"        : "<ISO-8601-timestamp>",
-  "cprp/valid-until"        : "<ISO-8601-timestamp>"
-}
-```
-
-#### 5.3 Re-Verification
-
-An ENS credential MUST be re-verified at most every 14 days.
-
-### 6. Cross-Chain Identity
-
-#### 6.1 Overview
-
-Canton parties operating across Canton, Ethereum, and traditional financial messaging systems benefit from explicit, verifiable links between their identities in each system. This CIP specifies the import patterns for three such links; further chains and registries may be added by future CIPs following the common pattern of Section 2.
-
-#### 6.2 Ethereum Signature Linking (T3)
-
-A Canton party links itself to an Ethereum address by signing its Canton Party ID with the private key of the Ethereum address. Procedure:
-
-1. The party constructs a canonical message `link-canton-party:<party-id>:<chain-id>:<nonce>` and signs it with the Ethereum private key.
-2. The verifying resolver recovers the Ethereum address from the signature, confirms it matches the claimed address, and publishes the credential at T3.
-
-#### 6.3 ENS Cross-Chain Anchoring (T3)
-
-Where an Ethereum address is itself bound to an ENS name, the ENS verification of Section 5 produces a cross-chain identity link automatically — the same credential establishes both the ENS binding and the Ethereum-address binding.
-
-#### 6.4 SWIFT BIC Self-Attestation (T4)
-
-A Canton party MAY self-attest to a SWIFT Business Identifier Code. This is T4 (self-attested); consumers SHOULD NOT treat it as authoritative without out-of-band verification. A future CIP may define a higher-tier verified-BIC procedure when a suitable verifying infrastructure exists.
-
-#### 6.5 Credential Encoding (cross-chain)
-
-```
-publisher : <verifying-resolver-party> (or <subject> for self-attestation)
-subject   : <verified-canton-party>
-holder    : <verified-canton-party>
-claims    : {
-  "cprp/trust-anchor"        : "<tier>",
-  "cprp/source"              : "<eth | ens-cross-chain | swift | ...>",
-  "cprp/external-identifier" : "<address | ens-name | BIC | ...>",
-  "cprp/chain-id"            : "<chain-id>",
-  "cprp/verification-method" : "<signature | ens-txt | self-attested>",
-  "cprp/verified-at"         : "<ISO-8601-timestamp>",
-  "cprp/valid-until"         : "<ISO-8601-timestamp>"
-}
-```
-
-### 7. Common Claim Keys
-
-The following claim keys are common across all import methods specified in this CIP. Their values are interpreted by CIP-XXXX composition and CIP-YYYY trust evaluation.
+### 5. Common Claim Keys
 
 | Claim Key | Value | Notes |
 |-----------|-------|-------|
-| `cprp/trust-anchor` | `T1` / `T2` / `T3` / `T4` | Declared per method per this CIP |
-| `cprp/source` | `dns` / `vlei` / `lei` / `ens` / `eth` / `swift` / ... | The external system |
-| `cprp/registrar` | The external identifier in its registrar (e.g. domain, LEI) | Maps to the FQPN registrar component |
-| `cprp/verification-method` | `dnssec-txt` / `gleif-api` / `ens-txt` / `signature` / ... | Identifies the exact procedure used |
+| `cprp/fqpn` | An FQPN string | The canonical FQPN this credential certifies |
+| `cprp/network` | `mainnet` / `testnet` / `devnet` / `localnet` | Network discriminator |
+| `cprp/source` | `dns` / `vlei` / `ens` / `eth` / `swift` / `email` / … | The external system |
+| `cprp/verification-method` | `dnssec-txt` / `gleif-api` / `ens-txt` / `signature` / … | The exact procedure used |
 | `cprp/verified-at` | ISO-8601 timestamp | When verification last succeeded |
 | `cprp/valid-until` | ISO-8601 timestamp | After which the credential MUST be re-verified |
 
-Method-specific keys (e.g. `cprp/legal-name`, `cprp/qvi`, `cprp/external-identifier`) are defined in their respective sections above.
+Importer-specific claim keys (e.g. `cprp/legal-name`, `cprp/qvi`) are defined in the respective importer's CIP.
 
-### 8. Architectural Alignment
+### 6. Architectural Alignment
 
-- This CIP consumes the trust tier framework defined in CIP-YYYY (Party Identity Verification). Every credential it specifies declares its tier under that framework.
-- This CIP produces credentials that are consumed by the resolver interface and composition engine defined in CIP-XXXX (Party Name Resolution). The FQPN format `<network>;<resolver>;<registrar>;<name>` is defined in CIP-XXXX; imported names populate the `<resolver>` and `<registrar>` slots per Section 7 above.
-- This CIP is complementary to the `.canton` CIP (Axymos, PR #209), which defines Canton-native naming. Imported names and `.canton` names coexist in the composition result; the consuming application's resolution strategy decides which to display.
-- Verification of imported names is conducted by resolvers granted T3 featured status under the registry specified in CIP-YYYY. This CIP does not define the featured-resolver governance; it only declares which methods produce which tier when executed by a featured resolver.
+- This CIP relies on the Canton Party Name Resolution Standard for the FQPN format, the resolver interface, the resolution algorithm, and the display conventions.
+- This CIP relies on the CN Credentials Standard CIP for the on-ledger credential registry that stores all importer credentials.
+- This CIP interoperates with the CNS 2.0 CIP for registrar governance and for the Decentralized Registry Operator infrastructure that shared external importers may use.
+- This CIP is complementary to the `.canton` CIP (Axymos, PR #209); imported names and `.canton` names coexist and compose per the Canton Party Name Resolution Standard.
+- This CIP does not define the on-ledger governance for registrar approval; that is defined by the CNS 2.0 CIP.
 
-### 9. Backward Compatibility
+### 7. Backward Compatibility
 
-This CIP is additive. Existing DNS, LEI, GLEIF, and ENS infrastructure is used as-is; no changes are required outside the Canton Network. Existing CNS 1.0 names (`name.unverified.cns`) are unaffected — they remain self-registered and unverified until a party additionally undergoes verification under this CIP.
+Additive. External identity systems continue to operate as-is. Existing CNS 1.0 names remain unaffected. Applications not adopting this CIP simply do not receive imported-name credentials in their resolution results.
 
-A party MAY hold multiple imported credentials (e.g. a DNS-verified binding to `acme.com` and a vLEI-verified binding to its LEI) simultaneously; CIP-XXXX composition merges them and CIP-YYYY trust evaluation reflects the combined trust path.
+### 8. Fees
+
+Import registrations follow the fee model defined in the Canton Party Name Resolution Standard: per-name fees, free read traffic, paid write traffic. The recommended implementation reuses the extended-duration credential mechanism from the CN Credentials Standard CIP. Registrars operating shared external importers (e.g. the DRO for DNS) MAY charge fees to cover verification-infrastructure operating costs.
 
 ## Rationale
 
-### Why per-source flows
+### Why the import model
 
-The verification semantics of DNS, vLEI, and ENS differ in substance, not just in syntax. DNSSEC chains, GLEIF status checks, and on-chain signature recovery have different threat models, different revocation profiles, and different failure modes. A single abstract "import" procedure would either be too loose (leaving each operator to fill in critical details) or too rigid (forcing one source's discipline onto another). Per-source specifications, sharing a common pattern, give implementers precise targets while keeping the overall system coherent.
+Simon Meier's answer at the July 9, 2026 WG meeting is decisive: Daml code that references an imported name needs on-ledger state. Bridge-style reference to the external system at query time works for read-only or private cases, but the general institutional workflow — settlement, custody, compliance — requires that the imported name be a first-class on-ledger entity. Import forces the discipline of a defined verification procedure, a defined re-verification cadence, and a defined credential encoding; bridge models tend to shortcut these.
 
-### Why phased DNS verification
+### Why one full CIP now, blueprints for the rest
 
-Featured-resolver quorum (T3) ships without any change to the Super Validator stack and produces a credible binding immediately. SV consensus DNS verification (T1) is materially stronger but requires Splice changes and broader operator participation. Phasing avoids the worst tradeoff (waiting on the strongest mechanism to enable any DNS verification at all) and gives the network a graceful upgrade path: a Phase-2 T1 credential can supersede a Phase-1 T3 credential for the same binding without breaking composition.
+Attempting to specify five importers (DNS, LEI, ENS, cross-chain, email) at CIP quality in a single document produces a large document that dilutes review. Specifying DNS fully and treating it as the blueprint gives the WG a concrete artifact to review and a template that scales. Each future importer becomes a small CIP building on this one.
 
-### Why T2 for vLEI and T3 for DNS
+### Why DNS first
 
-GLEIF is a regulated identity authority whose attestations carry external legal weight. The vLEI tier reflects that external authority, not the intermediary resolver that conducts the verification. DNS, by contrast, attests to control of a domain but not to legal identity behind that domain; a domain registrant's legal identity is established by other means. T3 for DNS reflects credible control of a public identifier without further legal binding.
+DNS is the largest existing identifier system with a workable verification mechanism (DNSSEC + TXT records). The infrastructure to run a DNS importer is mature. The WG has discussed operating it as a Decentralized Registry Operator on the SV attestor pool (per Simon's June 25 presentation), which gives it credibility as a first-class network-native importer rather than a single-vendor service.
 
-### Why a separate CIP
+### Why re-verification cadences differ per source
 
-Resolution (CIP-XXXX), trust framework (CIP-YYYY), and import methods (this CIP) are independently useful and independently evolvable. New import methods (e.g. national KYC registries, additional chains) extend this CIP without touching resolution or trust. New resolvers using existing methods extend CIP-XXXX without touching this CIP. Decoupling allows each to evolve at its own pace.
+DNS records can change silently; DNSSEC does not push change notifications reliably to all downstream resolvers, so a bounded re-verification window is required. GLEIF publishes LEI status changes with clear semantics, so vLEI credentials can be re-verified less often and can be archived promptly on status change. ENS names have similar mechanics to DNS with some on-chain state; a 14-day cadence balances staleness against verification cost. SWIFT self-attestation has no verifying infrastructure and is treated accordingly.
 
-## Companion CIPs
+### Why registrars can charge fees for imports
 
-- CIP-XXXX (Party Name Resolution) — defines the FQPN format, resolver interface, composition engine, and display model that consume imported credentials.
-- CIP-YYYY (Party Identity Verification) — defines the trust tier framework (T1–T4), the trust evaluator, verification policies, and the featured-resolver registry under which import methods operate.
-- `.canton` CIP (Axymos, PR #209) — defines the Canton-native `.canton` namespace, its registrars, and its allocation policy. Complementary to this CIP.
+Verification infrastructure is not free. DNSSEC validation, GLEIF API access, ENS RPC, signature verification for cross-chain — all impose operational cost. A per-registration fee (or subscription) covers this while remaining minimal, consistent with the fee model of the Canton Party Name Resolution Standard.
+
+## Companion Documents
+
+- Canton Party Name Resolution Standard (Freename, companion) — defines the FQPN, the resolver interface, resolution algorithm, and display conventions.
+- CNS 2.0 CIP (Digital Asset) — defines the `cns` resolver, the SV-Operated TLD Registry, the Decentralized Registry Operator infrastructure.
+- CN Credentials Standard CIP (Digital Asset, PR #204) — the credential registry all importer credentials publish into.
+- `.canton` CIP (Axymos, PR #209) — Canton-native name allocation, complementary to this CIP.
+- `cprp-verification.md` (reference / future work) — the advanced trust framework retained as reference for future consideration.

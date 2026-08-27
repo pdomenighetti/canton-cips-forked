@@ -14,10 +14,6 @@ This CIP standardizes four things and deliberately nothing more: how human-reada
 
 It aligns with the CNS 2.0 architecture proposed by Simon Meier (Digital Asset) and the Working Group direction converged over the May–August 2026 meetings.
 
-## Out of Scope
-
-To preserve implementation freedom, this CIP does not specify: transport protocols, API endpoints, or wire schemas for resolver services; deployment topologies, footprints, or availability targets; fee or economic models (these belong to the CIPs of the registries that hold name state, e.g. CNS 2.0); multi-source result composition; advanced verification frameworks (parked as future work); or the allocation and governance of any specific name space (`.canton` is governed by its own CIP, PR #209; the `cns` registry infrastructure by the CNS 2.0 CIP).
-
 ## Motivation
 
 Canton participants are identified by cryptographic Party IDs of the form `<prefix>::<68-character-namespace-hash>` — unusable in human workflows. CNS 1.0 names (`name.unverified.cns`) are self-registered without verification and convey no signal about which counterparty they identify. Applications need to display trustworthy human-readable names, accept them as input, and discover metadata keyed on a party — uniformly across the network. This CIP provides the shared representation, resolution behavior, and rendering conventions that make that possible, while leaving every implementation choice to implementers.

@@ -207,9 +207,9 @@ A preferred-name claim is self-issued. Verifying that the claimed FQPN actually 
 
 ### Prior art for icon-plus-name rendering
 
-The `<icon> <display-name>` convention follows established block-explorer practice. Etherscan renders known addresses as a source logo followed by a human-readable tag (e.g. an exchange's logo and label in place of the raw address), which has proven legible and spoof-resistant at scale:
+The `<icon> <display-name>` convention follows established block-explorer practice. Etherscan's transaction lists render known addresses as a source icon followed by a human-readable name in place of the raw hex — exchange tags, contract labels, and ENS names side by side in the same table — which has proven legible and spoof-resistant at scale:
 
-![Etherscan prior art: logo and name tag rendered in place of a raw address](images/etherscan-prior-art.png)
+![Etherscan transaction list: source icons and names (exchange tag, contract label, ENS name) rendered in place of raw addresses](etherscan-prior-art.png)
 
 ## Companion Documents
 
